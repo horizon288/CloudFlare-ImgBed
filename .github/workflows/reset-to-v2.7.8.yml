@@ -1,0 +1,30 @@
+name: Reset fork to v2.7.8
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reset main to upstream v2.7.8 (b0fc780)
+        run: |
+          git config user.name "horizon288"
+          git config user.email "horizon288@users.noreply.github.com"
+          OLD_SHA=$(git rev-parse HEAD)
+          git remote add upstream https://github.com/MarSeventh/CloudFlare-ImgBed.git
+          git fetch upstream tag v2.7.8
+          git checkout -B main v2.7.8
+          git ls-files .github/workflows | xargs -r git rm -q
+          git checkout "$OLD_SHA" -- .github/workflows
+          git add -A .github/workflows
+          git commit -m "Reset fork to upstream v2.7.8 (b0fc780); keep fork workflows"
+          git push --force origin main
+          git push origin v2.7.8 || echo "tag push skipped (non-fatal)"
