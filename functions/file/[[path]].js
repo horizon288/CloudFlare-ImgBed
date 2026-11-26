@@ -71,9 +71,14 @@ export async function onRequest(context) {  // Contents of context object
         return await returnBlockImg(url);
     }
 
-    // 从数据库中获取图片记录
+        // 从数据库中获取图片记录
     const db = getDatabase(env);
-    const imgRecord = await db.getWithMetadata(fileId);
+    let imgRecord = await db.getWithMetadata(fileId);
+    if (!imgRecord) {
+        // 兜底：兼容只用文件名访问的旧直链（如 /file/20250408002609783.png）。
+        // 旧记录的键是"时间戳_文件名"，直接按文件名查不到，这里在键列表里按文件名匹配一次。
+        imgRecord = await findFileByName(db, fileId);
+    }
     if (!imgRecord) {
         return new Response('Error: Image Not Found', { status: 404 });
     }
@@ -227,6 +232,28 @@ export async function onRequest(context) {  // Contents of context object
         return await transformImageResponse(context, newRes);
     } catch (error) {
         return new Response('Error: ' + error, { status: 500 });
+    }
+}
+
+// 按文件名在数据库键列表中查找记录（兼容旧直链只用文件名的访问方式）
+// 键格式为"时间戳_文件名"，文件名本身即 metadata.FileName
+async function findFileByName(db, fileName) {
+    try {
+        const response = await db.list({ limit: 1000 });
+        const keys = response.keys || [];
+        const matched = keys.find((item) => {
+                        if (!item || typeof item.name !== 'string') return false;
+            if (item.name.startsWith('manage@') || item.name.startsWith('chunk_')) return false;
+            if (item.name === fileName) return true;
+            if (item.name.endsWith('_' + fileName)) return true;
+            const meta = item.metadata || {};
+            return meta.FileName === fileName;
+        });
+        if (!matched) return null;
+        return await db.getWithMetadata(matched.name);
+    } catch (error) {
+        console.error('Failed to find file by name:', error.message);
+        return null;
     }
 }
 
