@@ -71,14 +71,20 @@ export async function onRequest(context) {  // Contents of context object
         return await returnBlockImg(url);
     }
 
-        // 从数据库中获取图片记录
+            // 从数据库中获取图片记录
     const db = getDatabase(env);
-    let imgRecord = await db.getWithMetadata(fileId);
+    // 短链接（只有文件名、没有“13位时间戳_”前缀）直接走兜底查找，避免直接查到同名的旧记录
+    const isFullId = /^\d{13}_/.test(fileId);
+    let imgRecord = null;
+    if (isFullId) {
+        imgRecord = await db.getWithMetadata(fileId);
+    }
     if (!imgRecord) {
         // 兜底：兼容只用文件名访问的旧直链（如 /file/20250408002609783.png）。
-        // 旧记录的键是"时间戳_文件名"，直接按文件名查不到，这里在键列表里按文件名匹配一次。
+        // 旧记录的键是“时间戳_文件名”，直接按文件名查不到，这里在键列表里按文件名匹配一次。
         imgRecord = await findFileByName(db, fileId);
     }
+    console.log('[file] lookup fileId=' + fileId + ' fullId=' + isFullId + ' result=' + (imgRecord ? 'hit' : 'miss'));
     if (!imgRecord) {
         return new Response('Error: Image Not Found', { status: 404 });
     }
@@ -241,14 +247,16 @@ async function findFileByName(db, fileName) {
     try {
         const response = await db.list({ limit: 1000 });
         const keys = response.keys || [];
-        const matched = keys.find((item) => {
-                        if (!item || typeof item.name !== 'string') return false;
+        const candidates = keys.filter((item) => {
+            if (!item || typeof item.name !== 'string') return false;
             if (item.name.startsWith('manage@') || item.name.startsWith('chunk_')) return false;
-            if (item.name === fileName) return true;
-            if (item.name.endsWith('_' + fileName)) return true;
-            const meta = item.metadata || {};
-            return meta.FileName === fileName;
+            return true;
         });
+        // 优先找“时间戳_文件名”这种带前缀的正式记录，其次才是裸文件名
+        let matched = candidates.find((item) => item.name.endsWith('_' + fileName));
+        if (!matched) matched = candidates.find((item) => item.name === fileName);
+        if (!matched) matched = candidates.find((item) => (item.metadata || {}).FileName === fileName);
+        console.log('[file] fallback fileName=' + fileName + ' keys=' + keys.length + ' matched=' + (matched ? matched.name : 'none'));
         if (!matched) return null;
         return await db.getWithMetadata(matched.name);
     } catch (error) {
