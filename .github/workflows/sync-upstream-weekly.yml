@@ -1,0 +1,39 @@
+name: Sync upstream weekly
+
+on:
+  schedule:
+    # 每周一 03:00 UTC 跑一次（北京时间 11:00）
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SYNC_TOKEN }}
+          fetch-depth: 0
+
+      - name: Reset to upstream main and restore fork-only workflows
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/MarSeventh/CloudFlare-ImgBed.git
+          git fetch upstream main
+          git checkout main
+          git reset --hard upstream/main
+          # The reset wipes fork-only workflow files (they are not in upstream).
+          # Restore them from the commit that triggered this run, so the sync keeps working.
+          for f in sync-upstream-weekly.yml webpack.yml; do
+            if git cat-file -e "${{ github.sha }}:.github/workflows/$f" 2>/dev/null; then
+              git show "${{ github.sha }}:.github/workflows/$f" > ".github/workflows/$f"
+              git add ".github/workflows/$f"
+            fi
+          done
+          git commit -m "Restore fork-only workflows after upstream sync" || echo "nothing to commit"
+          git push --force origin main
