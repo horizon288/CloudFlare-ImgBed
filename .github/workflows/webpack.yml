@@ -18,11 +18,9 @@ jobs:
       id: get_commit_info
       run: |
         echo "commit_sha=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-        {
-          echo 'commit_message<<EOF'
-          git log -1 --pretty=%B
-          echo 'EOF'
-      } >> $GITHUB_ENV
+        echo 'commit_message<<EOF' >> $GITHUB_ENV
+        git log -1 --pretty=%B >> $GITHUB_ENV
+        echo 'EOF' >> $GITHUB_ENV
         echo "release_date=$(date +"%Y-%m-%d")" >> $GITHUB_ENV
 
     # 将当前目录下的所有文件打包为 zip 文件
